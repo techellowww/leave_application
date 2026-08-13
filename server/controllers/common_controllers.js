@@ -1,7 +1,6 @@
 export const create = async (req, res, model) => {
   try {
     const data = await model.create(req.body);
-    await data.save();
     res.status(201).json({ message: "Created successfully", data: data });
   } catch (error) {
     console.log(error);
