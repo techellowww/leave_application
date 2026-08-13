@@ -22,6 +22,9 @@ const leaveSchema = new mongoose.Schema({
     enum: ["pending", "approved", "rejected"],
     required: true,
   },
+  employeeId: {
+    type: String,
+  },
   assignedTo: {
     type: String,
     required: true,

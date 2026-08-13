@@ -1,9 +1,11 @@
 import User from "../models/Users.js";
 import Leave from "../models/Leave.js";
+import Holiday from "../models/Holiday.js";
 
 export const leaveSummary = async (req, res) => {
   try {
-    const users = await User.find().select("name employeeId allotedLeaves");
+    const userFilter = req.user && req.user.role !== "admin" ? { employeeId: req.user.employeeId } : {};
+    const users = await User.find(userFilter).select("name employeeId allotedLeaves");
 
     const approvedLeaves = await Leave.aggregate([
       { $match: { status: "approved" } },
@@ -218,3 +220,14 @@ export const allEmployeeReport = async (req, res) => {
     res.status(500).json({ message: "internal server error" });
   }
 };
+
+const buildDateFilter = (fromDate, toDate) => {
+  const filter = {};
+  if (fromDate || toDate) {
+    filter.fromDate = {};
+    if (fromDate) filter.fromDate.$gte = new Date(fromDate);
+    if (toDate) filter.fromDate.$lte = new Date(toDate);
+  }
+  return filter;
+};
+

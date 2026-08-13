@@ -6,10 +6,11 @@ import {
   singleEmployeeReport,
   allEmployeeReport,
 } from "../controllers/dashboard_controller.js";
+import { protect } from "../middleware/auth_middleware.js";
 
 const router = express.Router();
 
-router.get("/leave-summary", leaveSummary);
+router.get("/leave-summary", protect, leaveSummary);
 router.get("/monthly-summary", monthlySummary);
 router.get("/report/date-wise", dateWiseReport);
 router.get("/report/employee/:employeeId", singleEmployeeReport);
