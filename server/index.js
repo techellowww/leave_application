@@ -2,7 +2,6 @@ import express from "express";
 import dotenv from "dotenv";
 import connectDB from "./config/dbConfig.js";
 import cors from "cors";
-import cookieParser from "cookie-parser";
 import user from "./routes/user.js";
 import leave from "./routes/leave.js";
 import dashboard from "./routes/dashboard.js";
@@ -15,8 +14,10 @@ const app = express();
 const PORT = process.env.PORT || 5001;
 
 app.use(express.json());
-app.use(cookieParser());
 
+// CORS Configuration:
+// In production (when CLIENT_URL is set), restrict origins to allowed list.
+// In local development (when CLIENT_URL is not set), allow all origins (dev fallback).
 const allowedOrigins = [
   "http://localhost:5173",
   "http://localhost:5174",
@@ -25,7 +26,7 @@ const allowedOrigins = [
 
 app.use(
   cors({
-    origin: allowedOrigins.length > 2 ? allowedOrigins : true,
+    origin: process.env.CLIENT_URL ? allowedOrigins : true,
     credentials: true,
   }),
 );
