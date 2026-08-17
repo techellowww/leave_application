@@ -19,10 +19,14 @@ export const update = async (req, res, model) => {
   }
 };
 
-export const getAll = async (req, res, model, extraFilter = {}) => {
+export const getAll = async (req, res, model, extraFilter = {}, selectFields = "") => {
   try {
     let filter = { ...req.query, ...extraFilter };
-    const data = await model.find(filter);
+    let query = model.find(filter);
+    if (selectFields) {
+      query = query.select(selectFields);
+    }
+    const data = await query;
     res.status(200).json({ message: "Success", data: data });
   } catch (error) {
     console.log(error);
@@ -30,10 +34,14 @@ export const getAll = async (req, res, model, extraFilter = {}) => {
   }
 };
 
-export const getOne = async (req, res, model, extraFilter = {}) => {
+export const getOne = async (req, res, model, extraFilter = {}, selectFields = "") => {
   try {
     const filter = { _id: req.params.id, ...extraFilter };
-    const data = await model.findById(filter);
+    let query = model.findById(filter);
+    if (selectFields) {
+      query = query.select(selectFields);
+    }
+    const data = await query;
     res.status(200).json({ message: "Success", data: data });
   } catch (error) {
     console.log(error);

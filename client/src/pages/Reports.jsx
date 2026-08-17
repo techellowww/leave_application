@@ -8,7 +8,10 @@ import {
 import DataTable from "../components/common/DataTable";
 import StatusBadge from "../components/common/StatusBadge";
 import { useToast } from "../components/common/Toast";
-import { FileSpreadsheet, Filter, Download, Printer } from "lucide-react";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
+import * as XLSX from "xlsx";
+import { FileSpreadsheet, Filter, FileText } from "lucide-react";
 
 const Reports = () => {
   const { showToast } = useToast();
@@ -90,128 +93,190 @@ const Reports = () => {
     }
   };
 
-  const exportToCSV = (filename, rows) => {
-    if (!rows || !rows.length) {
-      showToast("No data available to download", "warning");
-      return;
-    }
-    const separator = ",";
-    const keys = Object.keys(rows[0]);
-    const csvContent =
-      keys.join(separator) +
-      "\n" +
-      rows
-        .map((row) =>
-          keys
-            .map((k) => {
-              let cell = row[k] === null || row[k] === undefined ? "" : row[k];
-              cell = cell.toString().replace(/"/g, '""');
-              if (cell.search(/("|,|\n)/) >= 0) {
-                cell = `"${cell}"`;
-              }
-              return cell;
-            })
-            .join(separator)
-        )
-        .join("\n");
-
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.setAttribute("href", url);
-    link.setAttribute("download", filename);
-    link.style.visibility = "hidden";
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    showToast("Report downloaded successfully!", "success");
-  };
-
-  const handleDownloadCSV = () => {
+  const handleDownloadExcel = () => {
     if (!reportResults || !reportResults.data) {
       showToast("Please generate a report first", "warning");
       return;
     }
 
     const dateStr = new Date().toISOString().split("T")[0];
+    let filename = "";
+    let rows = [];
 
     if (reportResults.type === "all") {
-      const rows = (reportResults.data || []).map((emp) => ({
+      filename = `Leave_Report_All_Employees_${dateStr}.xlsx`;
+      rows = (reportResults.data || []).map((emp) => ({
         "Employee Name": emp.name || "",
         "Employee ID": emp.employeeId || "",
         "Office Email": emp.email || "",
-        "Role": emp.role || "",
+        Role: emp.role || "",
         "Allotted Leaves": emp.allotedLeaves || 0,
         "Leaves Taken": emp.takenLeaves || 0,
         "Remaining Leaves": emp.remainingLeaves || 0,
         "Total Leave Requests": emp.leaves?.length || 0,
       }));
-      exportToCSV(`Leave_Report_All_Employees_${dateStr}.csv`, rows);
     } else if (reportResults.type === "single") {
       const emp = reportResults.data.employee || {};
       const leaves = reportResults.data.leaves || [];
-      const rows = leaves.map((l) => ({
+      filename = `Leave_Report_${emp.employeeId || "Employee"}_${dateStr}.xlsx`;
+      rows = leaves.map((l) => ({
         "Employee Name": emp.name || "",
         "Employee ID": emp.employeeId || "",
-        "From Date": l.fromDate ? new Date(l.fromDate).toLocaleDateString() : "",
+        "From Date": l.fromDate
+          ? new Date(l.fromDate).toLocaleDateString()
+          : "",
         "To Date": l.toDate ? new Date(l.toDate).toLocaleDateString() : "",
         "Leave Type": l.leaveType || "",
         "Total Days": l.totalDays || 0,
-        "Status": l.status || "",
-        "Reason": l.reason || "",
+        Status: l.status || "",
+        Reason: l.reason || "",
       }));
-      exportToCSV(`Leave_Report_${emp.employeeId || "Employee"}_${dateStr}.csv`, rows);
     } else if (reportResults.type === "date") {
-      const rows = (reportResults.data || []).map((l) => ({
+      filename = `Leave_Report_DateWise_${dateStr}.xlsx`;
+      rows = (reportResults.data || []).map((l) => ({
         "Employee Name": l.employeeName || "",
         "Employee ID": l.employeeId || "",
-        "From Date": l.fromDate ? new Date(l.fromDate).toLocaleDateString() : "",
+        "From Date": l.fromDate
+          ? new Date(l.fromDate).toLocaleDateString()
+          : "",
         "To Date": l.toDate ? new Date(l.toDate).toLocaleDateString() : "",
         "Leave Type": l.leaveType || "",
         "Total Days": l.totalDays || 0,
-        "Status": l.status || "",
+        Status: l.status || "",
+        Reason: l.reason || "",
       }));
-      exportToCSV(`Leave_Report_DateWise_${dateStr}.csv`, rows);
     }
+
+    const worksheet = XLSX.utils.json_to_sheet(rows);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Leave Report");
+    XLSX.writeFile(workbook, filename);
+    showToast("Excel report downloaded successfully!", "success");
   };
 
-  const handlePrint = () => {
-    window.print();
+  const handleDownloadPDF = () => {
+    if (!reportResults || !reportResults.data) {
+      showToast("Please generate a report first", "warning");
+      return;
+    }
+
+    const doc = new jsPDF();
+    const formattedDate = new Date().toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+
+    let title = "Leave Application Report";
+    let filename = `Leave_Report_${new Date().toISOString().split("T")[0]}.pdf`;
+    let head = [];
+    let body = [];
+
+    if (reportResults.type === "all") {
+      title = "All Employees Leave Summary Report";
+      filename = `Leave_Report_All_Employees_${new Date().toISOString().split("T")[0]}.pdf`;
+      head = [
+        [
+          "Employee Name",
+          "Employee ID",
+          "Office Email",
+          "Role",
+          "Allotted",
+          "Taken",
+          "Remaining",
+          "Total Requests",
+        ],
+      ];
+      body = (reportResults.data || []).map((emp) => [
+        emp.name || "",
+        emp.employeeId || "",
+        emp.email || "",
+        emp.role || "",
+        emp.allotedLeaves || 0,
+        emp.takenLeaves || 0,
+        emp.remainingLeaves || 0,
+        emp.leaves?.length || 0,
+      ]);
+    } else if (reportResults.type === "single") {
+      const emp = reportResults.data.employee || {};
+      const leaves = reportResults.data.leaves || [];
+      title = `Leave Report - ${emp.name || "Employee"} (${emp.employeeId || ""})`;
+      filename = `Leave_Report_${emp.employeeId || "Employee"}_${new Date().toISOString().split("T")[0]}.pdf`;
+      head = [
+        [
+          "From Date",
+          "To Date",
+          "Leave Type",
+          "Total Days",
+          "Status",
+          "Reason",
+        ],
+      ];
+      body = leaves.map((l) => [
+        l.fromDate ? new Date(l.fromDate).toLocaleDateString() : "",
+        l.toDate ? new Date(l.toDate).toLocaleDateString() : "",
+        l.leaveType || "",
+        l.totalDays || 0,
+        l.status || "",
+        l.reason || "",
+      ]);
+    } else if (reportResults.type === "date") {
+      title = `Date-Wise Leave Report (${reportFromDate || "Start"} to ${reportToDate || "End"})`;
+      filename = `Leave_Report_DateWise_${new Date().toISOString().split("T")[0]}.pdf`;
+      head = [
+        [
+          "Employee Name",
+          "Employee ID",
+          "From Date",
+          "To Date",
+          "Leave Type",
+          "Total Days",
+          "Status",
+        ],
+      ];
+      body = (reportResults.data || []).map((l) => [
+        l.employeeName || "",
+        l.employeeId || "",
+        l.fromDate ? new Date(l.fromDate).toLocaleDateString() : "",
+        l.toDate ? new Date(l.toDate).toLocaleDateString() : "",
+        l.leaveType || "",
+        l.totalDays || 0,
+        l.status || "",
+      ]);
+    }
+
+    // Title
+    doc.setFontSize(16);
+    doc.setTextColor(30, 41, 59);
+    doc.text(title, 14, 18);
+
+    // Metadata
+    doc.setFontSize(9);
+    doc.setTextColor(100, 116, 139);
+    doc.text(`Generated Date: ${formattedDate}`, 14, 25);
+
+    // Table
+    autoTable(doc, {
+      startY: 30,
+      head: head,
+      body: body,
+      theme: "striped",
+      headStyles: {
+        fillColor: [79, 70, 229],
+        textColor: [255, 255, 255],
+        fontStyle: "bold",
+      },
+      styles: { fontSize: 8, cellPadding: 3 },
+      alternateRowStyles: { fillColor: [248, 250, 252] },
+    });
+
+    doc.save(filename);
+    showToast("PDF report downloaded successfully!", "success");
   };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
       {/* Header Banner */}
-      <div
-        className="card"
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          flexWrap: "wrap",
-          gap: "1rem",
-        }}
-      >
-        <div>
-          <h2 style={{ fontSize: "1.375rem", margin: "0 0 0.25rem" }}>
-            Leave Reports & Analytics
-          </h2>
-          <p style={{ fontSize: "0.875rem", color: "var(--text-muted)" }}>
-            Generate date-wise, single-employee, or company-wide leave utilization reports and download them as files.
-          </p>
-        </div>
-
-        {reportResults && (
-          <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
-            <button className="btn btn-primary" onClick={handleDownloadCSV}>
-              <Download size={16} /> Download Report (CSV)
-            </button>
-            <button className="btn btn-secondary" onClick={handlePrint}>
-              <Printer size={16} /> Print Report
-            </button>
-          </div>
-        )}
-      </div>
 
       {/* Filter Form Card */}
       <div className="card">
@@ -301,18 +366,46 @@ const Reports = () => {
       {/* Results Card */}
       {reportResults && (
         <div className="card">
-          <div className="card-header" style={{ flexWrap: "wrap", gap: "1rem" }}>
+          <div
+            className="card-header"
+            style={{ flexWrap: "wrap", gap: "1rem" }}
+          >
             <h3 className="card-title">
-              <FileSpreadsheet size={20} color="var(--primary-600)" /> Report Output
+              <FileSpreadsheet size={20} color="var(--primary-600)" /> Report
+              Output
             </h3>
-            <button className="btn btn-primary btn-sm" onClick={handleDownloadCSV}>
-              <Download size={15} /> Download CSV File
-            </button>
+            <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+              <button
+                className="btn btn-primary btn-sm"
+                onClick={handleDownloadExcel}
+              >
+                <FileSpreadsheet size={15} /> Download Excel
+              </button>
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={handleDownloadPDF}
+                style={{
+                  backgroundColor: "#dc2626",
+                  color: "#ffffff",
+                  borderColor: "#dc2626",
+                }}
+              >
+                <FileText size={15} /> Download PDF
+              </button>
+            </div>
           </div>
 
           {reportResults.type === "single" && reportResults.data?.employee && (
             <div>
-              <div className="grid-responsive-cards" style={{ padding: "1.25rem", backgroundColor: "var(--bg-slate)", borderRadius: "var(--radius-md)", marginBottom: "1.25rem" }}>
+              <div
+                className="grid-responsive-cards"
+                style={{
+                  padding: "1.25rem",
+                  backgroundColor: "var(--bg-slate)",
+                  borderRadius: "var(--radius-md)",
+                  marginBottom: "1.25rem",
+                }}
+              >
                 <div>
                   <span
                     style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}

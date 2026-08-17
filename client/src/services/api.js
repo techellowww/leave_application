@@ -1,6 +1,7 @@
 import axios from "axios";
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:5001/api";
+const API_BASE_URL =
+  import.meta.env.VITE_API_URL || "http://localhost:5000/api";
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -18,7 +19,7 @@ api.interceptors.request.use(
     }
     return config;
   },
-  (error) => Promise.reject(error)
+  (error) => Promise.reject(error),
 );
 
 // Response Interceptor to handle global errors like 401 Unauthorized
@@ -33,7 +34,7 @@ api.interceptors.response.use(
       }
     }
     return Promise.reject(error);
-  }
+  },
 );
 
 /* ---------------- Auth Endpoints ---------------- */
@@ -54,16 +55,24 @@ export const getLeaveSummary = async () => {
 };
 
 export const getMonthlySummary = async (month, year) => {
-  const res = await api.get(`/dashboard/monthly-summary?month=${month}&year=${year}`);
+  const res = await api.get(
+    `/dashboard/monthly-summary?month=${month}&year=${year}`,
+  );
   return res.data;
 };
 
 export const getDateWiseReport = async (fromDate, toDate) => {
-  const res = await api.get(`/dashboard/report/date-wise?fromDate=${fromDate}&toDate=${toDate}`);
+  const res = await api.get(
+    `/dashboard/report/date-wise?fromDate=${fromDate}&toDate=${toDate}`,
+  );
   return res.data;
 };
 
-export const getSingleEmployeeReport = async (employeeId, fromDate = "", toDate = "") => {
+export const getSingleEmployeeReport = async (
+  employeeId,
+  fromDate = "",
+  toDate = "",
+) => {
   let url = `/dashboard/report/employee/${employeeId}`;
   if (fromDate && toDate) {
     url += `?fromDate=${fromDate}&toDate=${toDate}`;

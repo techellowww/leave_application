@@ -88,12 +88,15 @@ const LeaveModule = () => {
   const fetchUsersData = async () => {
     try {
       const res = await getUsers();
-      setUsersList(res.data || []);
-      // Set default assignedTo to admin user or first employee in list
-      const adminUser =
-        res.data?.find((u) => u.role === "admin") || res.data?.[0];
-      if (adminUser) {
-        setFormData((prev) => ({ ...prev, assignedTo: adminUser.employeeId }));
+      const allUsers = res.data || [];
+      setUsersList(allUsers);
+      const availableUsers = allUsers.filter(
+        (u) => u.employeeId !== user?.employeeId && u._id !== user?._id
+      );
+      const defaultUser =
+        availableUsers.find((u) => u.role === "admin") || availableUsers[0];
+      if (defaultUser) {
+        setFormData((prev) => ({ ...prev, assignedTo: defaultUser.employeeId }));
       }
     } catch (err) {
       console.error("Error fetching users data:", err);
@@ -109,20 +112,18 @@ const LeaveModule = () => {
       const end = new Date(newForm.toDate);
 
       if (end < start) {
-        setDateError("'To Date' cannot be earlier than 'From Date'");
-        newForm.totalDays = 0;
-      } else {
-        setDateError("");
-        const diffTime = Math.abs(end - start);
-        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
-        newForm.totalDays = diffDays;
+        setDateError("To Date cannot be earlier than From Date");
+        setFormData({ ...newForm, totalDays: 0 });
+        return;
       }
+      setDateError("");
+      const diffTime = Math.abs(end - start);
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+      setFormData({ ...newForm, totalDays: diffDays });
     } else {
       setDateError("");
-      newForm.totalDays = 0;
+      setFormData(newForm);
     }
-
-    setFormData(newForm);
   };
 
   const handleApplySubmit = async (e) => {
@@ -138,35 +139,36 @@ const LeaveModule = () => {
       !formData.reason ||
       !formData.assignedTo
     ) {
-      showToast("Please fill all required fields", "error");
+      showToast("Please fill in all required fields", "error");
       return;
     }
 
     try {
       setSubmitting(true);
       const payload = {
-        ...formData,
-        employeeId: user?.employeeId,
-        assignedTo: formData.assignedTo || user?.employeeId,
+        fromDate: formData.fromDate,
+        toDate: formData.toDate,
+        reason: formData.reason,
+        totalDays: Number(formData.totalDays),
+        leaveType: formData.leaveType,
+        assignedTo: formData.assignedTo,
       };
 
       if (editingLeaveId) {
         await updateLeave(editingLeaveId, payload);
-        showToast("Leave request updated successfully!", "success");
+        showToast("Leave request updated successfully", "success");
       } else {
         payload.status = "pending";
         await createLeave(payload);
-        showToast("Leave request submitted successfully!", "success");
+        showToast("Leave application submitted successfully", "success");
       }
 
       setIsApplyModalOpen(false);
       resetApplyForm();
       fetchLeavesList();
     } catch (err) {
-      showToast(
-        err.response?.data?.message || "Failed to save leave request",
-        "error"
-      );
+      console.error("Error submitting leave:", err);
+      showToast(err.response?.data?.message || "Operation failed", "error");
     } finally {
       setSubmitting(false);
     }
@@ -174,13 +176,21 @@ const LeaveModule = () => {
 
   const resetApplyForm = () => {
     setEditingLeaveId(null);
+    const availableUsers = usersList.filter(
+      (u) => u.employeeId !== user?.employeeId && u._id !== user?._id
+    );
+    const defaultAssigned =
+      availableUsers.find((u) => u.role === "admin")?.employeeId ||
+      availableUsers[0]?.employeeId ||
+      "";
+
     setFormData({
       fromDate: "",
       toDate: "",
       reason: "",
       totalDays: 0,
       leaveType: "Casual",
-      assignedTo: usersList[0]?.employeeId || user?.employeeId || "",
+      assignedTo: defaultAssigned,
     });
     setDateError("");
   };
@@ -275,17 +285,47 @@ const LeaveModule = () => {
     }
   };
 
-  const filteredLeaves = leaves.filter((item) => {
-    const isOwnData =
-      isAdmin ||
-      item.employeeId === user?.employeeId ||
-      item.assignedTo === user?.employeeId;
-    if (!isOwnData) return false;
-    if (statusFilter === "all") return true;
-    return item.status === statusFilter;
-  });
+  const filteredLeaves = leaves
+    .map((item) => {
+      const applicantUser = usersList.find((u) => u.employeeId === item.employeeId);
+      const employeeName = applicantUser ? applicantUser.name : item.employeeId || "N/A";
+      return {
+        ...item,
+        employeeName,
+      };
+    })
+    .filter((item) => {
+      const isOwnData =
+        isAdmin ||
+        item.employeeId === user?.employeeId ||
+        item.assignedTo === user?.employeeId;
+      if (!isOwnData) return false;
+      if (statusFilter === "all") return true;
+      return item.status === statusFilter;
+    });
 
   const columns = [
+    {
+      header: "Employee Name",
+      render: (r) => {
+        const applicantUser = usersList.find((u) => u.employeeId === r.employeeId);
+        return (
+          <div>
+            <div style={{ fontWeight: 600, color: "var(--text-main)" }}>
+              {applicantUser ? applicantUser.name : (r.employeeId || "N/A")}
+            </div>
+            {r.employeeId && (
+              <span
+                className="badge badge-neutral"
+                style={{ fontSize: "0.6875rem", fontFamily: "monospace", marginTop: "2px" }}
+              >
+                {r.employeeId}
+              </span>
+            )}
+          </div>
+        );
+      },
+    },
     {
       header: "Dates Range",
       render: (r) => (
@@ -495,8 +535,8 @@ const LeaveModule = () => {
           columns={columns}
           data={filteredLeaves}
           loading={loading}
-          searchKey="reason"
-          placeholder="Search by reason..."
+          searchKey="employeeName"
+          placeholder="Search employee by name..."
         />
       </div>
 
@@ -528,9 +568,9 @@ const LeaveModule = () => {
               {submitting ? (
                 <span className="spinner" />
               ) : editingLeaveId ? (
-                "Update Application"
+                "Update Leave"
               ) : (
-                "Submit Application"
+                "Submit Leave"
               )}
             </button>
           </>
@@ -620,11 +660,13 @@ const LeaveModule = () => {
                 }
                 required
               >
-                {usersList.map((emp) => (
-                  <option key={emp._id} value={emp.employeeId}>
-                    {emp.name} ({emp.employeeId})
-                  </option>
-                ))}
+                {usersList
+                  .filter((emp) => emp.employeeId !== user?.employeeId && emp._id !== user?._id)
+                  .map((emp) => (
+                    <option key={emp._id} value={emp.employeeId}>
+                      {emp.name} ({emp.employeeId})
+                    </option>
+                  ))}
               </select>
             </div>
           </div>
@@ -802,21 +844,35 @@ const LeaveModule = () => {
             <div className="form-grid-2">
               <div>
                 <span style={{ fontSize: "0.75rem", color: "var(--text-muted)", display: "block", marginBottom: "4px" }}>
+                  Applicant Employee
+                </span>
+                <div style={{ fontWeight: 600, fontSize: "0.9375rem" }}>
+                  {usersList.find((u) => u.employeeId === viewingLeave.employeeId)?.name || viewingLeave.employeeId || "N/A"}
+                </div>
+                {viewingLeave.employeeId && (
+                  <span className="badge badge-neutral" style={{ fontFamily: "monospace", fontSize: "0.6875rem", marginTop: "2px" }}>
+                    {viewingLeave.employeeId}
+                  </span>
+                )}
+              </div>
+              <div>
+                <span style={{ fontSize: "0.75rem", color: "var(--text-muted)", display: "block", marginBottom: "4px" }}>
                   Leave Type
                 </span>
                 <StatusBadge status={viewingLeave.leaveType} />
               </div>
-              <div>
-                <span style={{ fontSize: "0.75rem", color: "var(--text-muted)", display: "block", marginBottom: "4px" }}>
-                  Assigned Employee
-                </span>
-                <div style={{ fontWeight: 600, fontSize: "0.9375rem" }}>
-                  {usersList.find((u) => u.employeeId === viewingLeave.assignedTo)?.name || viewingLeave.assignedTo}
-                </div>
-                <span className="badge badge-neutral" style={{ fontFamily: "monospace", fontSize: "0.6875rem", marginTop: "2px" }}>
-                  {viewingLeave.assignedTo}
-                </span>
+            </div>
+
+            <div>
+              <span style={{ fontSize: "0.75rem", color: "var(--text-muted)", display: "block", marginBottom: "4px" }}>
+                Assigned Employee (Approver)
+              </span>
+              <div style={{ fontWeight: 600, fontSize: "0.9375rem" }}>
+                {usersList.find((u) => u.employeeId === viewingLeave.assignedTo)?.name || viewingLeave.assignedTo}
               </div>
+              <span className="badge badge-neutral" style={{ fontFamily: "monospace", fontSize: "0.6875rem", marginTop: "2px" }}>
+                {viewingLeave.assignedTo}
+              </span>
             </div>
 
             <div>

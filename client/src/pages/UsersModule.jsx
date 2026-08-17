@@ -75,9 +75,15 @@ const UsersModule = () => {
     }
   };
 
+  const closeModal = () => {
+    setIsModalOpen(false);
+    setShowPassword(false);
+  };
+
   const handleOpenAddModal = () => {
     setEditingUserId(null);
     setModalError("");
+    setShowPassword(false);
     setForm({
       name: "",
       email: "",
@@ -95,6 +101,7 @@ const UsersModule = () => {
   const handleOpenEditModal = (userItem) => {
     setEditingUserId(userItem._id);
     setModalError("");
+    setShowPassword(false);
     setForm({
       name: userItem.name || "",
       email: userItem.email || "",
@@ -139,7 +146,7 @@ const UsersModule = () => {
         await createUser(form);
         showToast("New employee added successfully", "success");
       }
-      setIsModalOpen(false);
+      closeModal();
       fetchUsersList();
     } catch (err) {
       const errMsg = err.response?.data?.message || "Operation failed";
@@ -305,13 +312,13 @@ const UsersModule = () => {
       {/* Add / Edit User Modal */}
       <Modal
         isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
+        onClose={closeModal}
         title={editingUserId ? "Edit Employee Details" : "Add New Employee"}
         footer={
           <>
             <button
               className="btn btn-secondary"
-              onClick={() => setIsModalOpen(false)}
+              onClick={closeModal}
               disabled={submitting}
             >
               Cancel
@@ -395,7 +402,7 @@ const UsersModule = () => {
 
             <div className="form-group">
               <label className="form-label">
-                Password {!editingUserId && <span className="required-star">*</span>} {editingUserId && "(Leave blank to keep unchanged)"}
+                Password {!editingUserId && <span className="required-star">*</span>} 
               </label>
               <div style={{ position: "relative" }}>
                 <input

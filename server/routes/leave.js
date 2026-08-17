@@ -16,6 +16,9 @@ router.post("/", protect, authorize(["admin", "user"]), (req, res) => {
   if (!req.body.employeeId && req.user) {
     req.body.employeeId = req.user.employeeId;
   }
+  if (!req.body.status) {
+    req.body.status = "pending";
+  }
   create(req, res, Leave);
 });
 

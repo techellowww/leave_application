@@ -1,4 +1,5 @@
 import express from "express";
+import bcrypt from "bcryptjs";
 import User from "../models/Users.js";
 import {
   create,
@@ -28,14 +29,18 @@ router.post("/", async (req, res) => {
           message: `User with Employee ID '${employeeId}' already exists!`,
         });
       }
+      req.body.employeeId = employeeId.trim();
     }
     if (email) {
-      const existingEmail = await User.findOne({ email: email.trim().toLowerCase() });
+      const existingEmail = await User.findOne({
+        email: email.trim().toLowerCase(),
+      });
       if (existingEmail) {
         return res.status(400).json({
           message: `User with Email '${email}' already exists!`,
         });
       }
+      req.body.email = email.trim().toLowerCase();
     }
     create(req, res, User);
   } catch (err) {
@@ -46,8 +51,9 @@ router.post("/", async (req, res) => {
 
 router.put("/:id", protect, authorize(["admin"]), async (req, res) => {
   try {
-    const { employeeId, email } = req.body;
+    const { employeeId, email, password } = req.body;
     const userId = req.params.id;
+
     if (employeeId) {
       const existingEmp = await User.findOne({
         employeeId: employeeId.trim(),
@@ -58,7 +64,9 @@ router.put("/:id", protect, authorize(["admin"]), async (req, res) => {
           message: `User with Employee ID '${employeeId}' already exists!`,
         });
       }
+      req.body.employeeId = employeeId.trim();
     }
+
     if (email) {
       const existingEmail = await User.findOne({
         email: email.trim().toLowerCase(),
@@ -69,7 +77,15 @@ router.put("/:id", protect, authorize(["admin"]), async (req, res) => {
           message: `User with Email '${email}' already exists!`,
         });
       }
+      req.body.email = email.trim().toLowerCase();
     }
+
+    if (password && password.trim() !== "") {
+      req.body.password = password.trim();
+    } else {
+      delete req.body.password;
+    }
+
     update(req, res, User);
   } catch (err) {
     console.error(err);
