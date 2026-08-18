@@ -1,58 +1,93 @@
-import mongoose from "mongoose";
+import { DataTypes } from "sequelize";
 import bcrypt from "bcryptjs";
+import sequelize from "../config/dbConfig.js";
 
-const userSchema = new mongoose.Schema({
-  name: {
-    type: String,
-    required: true,
+const User = sequelize.define(
+  "User",
+  {
+    id: {
+      type: DataTypes.INTEGER,
+      primaryKey: true,
+      autoIncrement: true,
+    },
+    name: {
+      type: DataTypes.STRING,
+      allowNull: false,
+    },
+    email: {
+      type: DataTypes.STRING,
+      allowNull: false,
+      unique: true,
+      validate: {
+        isEmail: true,
+      },
+    },
+    password: {
+      type: DataTypes.STRING,
+      allowNull: false,
+    },
+    mobileNumber: {
+      type: DataTypes.STRING,
+      allowNull: false,
+      validate: {
+        isIndianMobile(value) {
+          if (!/^(?:\+91[\-\s]?|0)?[6-9]\d{9}$/.test(value)) {
+            throw new Error("Please enter a valid 10-digit Indian mobile number");
+          }
+        },
+      },
+    },
+    role: {
+      type: DataTypes.ENUM("admin", "user"),
+      allowNull: false,
+      defaultValue: "user",
+    },
+    employeeId: {
+      type: DataTypes.STRING,
+      allowNull: false,
+      unique: true,
+    },
+    joiningDate: {
+      type: DataTypes.DATEONLY,
+      allowNull: false,
+    },
+    allotedLeaves: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+      defaultValue: 24,
+    },
+    status: {
+      type: DataTypes.ENUM("active", "inactive"),
+      allowNull: false,
+      defaultValue: "active",
+    },
   },
-  email: {
-    type: String,
-    required: true,
-  },
-  password: {
-    type: String,
-    required: true,
-  },
-  mobileNumber: {
-    type: String,
-    required: true,
-  },
-  role: {
-    type: String,
-    enum: ["admin", "user"],
-    required: true,
-  },
-  employeeId: {
-    type: String,
-    required: true,
-    unique: true,
-  },
-  joiningDate: {
-    type: Date,
-    required: true,
-  },
-  allotedLeaves: {
-    type: Number,
-    required: true,
-  },
-  status: {
-    type: String,
-    enum: ["active", "inactive"],
-    required: true,
-  },
-});
+  {
+    tableName: "users",
+    timestamps: true,
+    indexes: [
+      { unique: true, fields: ["email"] },
+      { unique: true, fields: ["employeeId"] },
+    ],
+  }
+);
 
-userSchema.methods.matchPassword = async function (enteredPassword) {
+// Instance method to compare password
+User.prototype.matchPassword = async function (enteredPassword) {
   if (!this.password || !enteredPassword) return false;
   if (this.password === enteredPassword) return true;
   try {
-    const isMatch = await bcrypt.compare(enteredPassword, this.password);
-    if (isMatch) return true;
-  } catch (err) {}
-  return false;
+    return await bcrypt.compare(enteredPassword, this.password);
+  } catch (err) {
+    return false;
+  }
 };
 
-const User = mongoose.model("User", userSchema);
+// Custom serialization to include _id and password
+User.prototype.toJSON = function () {
+  const values = { ...this.get() };
+  values._id = values.id;
+  return values;
+};
 
 export default User;

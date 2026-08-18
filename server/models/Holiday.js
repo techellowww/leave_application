@@ -1,26 +1,41 @@
-import mongoose from "mongoose";
+import { DataTypes } from "sequelize";
+import sequelize from "../config/dbConfig.js";
 
-const holidaySchema = new mongoose.Schema(
+const Holiday = sequelize.define(
+  "Holiday",
   {
+    id: {
+      type: DataTypes.INTEGER,
+      primaryKey: true,
+      autoIncrement: true,
+    },
     date: {
-      type: Date,
-      required: true,
+      type: DataTypes.DATEONLY,
+      allowNull: false,
     },
     name: {
-      type: String,
-      required: true,
+      type: DataTypes.STRING,
+      allowNull: false,
     },
     type: {
-      type: String,
-      enum: ["holiday", "non-working"],
-      default: "holiday",
+      type: DataTypes.ENUM("holiday", "non-working"),
+      allowNull: false,
+      defaultValue: "holiday",
     },
   },
   {
+    tableName: "holidays",
     timestamps: true,
-  },
+    indexes: [
+      { fields: ["date"] },
+    ],
+  }
 );
 
-const Holiday = mongoose.model("Holiday", holidaySchema);
+Holiday.prototype.toJSON = function () {
+  const values = { ...this.get() };
+  values._id = values.id;
+  return values;
+};
 
 export default Holiday;

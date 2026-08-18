@@ -1,17 +1,20 @@
 import express from "express";
 import dotenv from "dotenv";
-import connectDB from "./config/dbConfig.js";
 import cors from "cors";
+import sequelize, { connectDB } from "./config/dbConfig.js";
+import { seedAdmin } from "./config/seedAdmin.js";
 import user from "./routes/user.js";
 import leave from "./routes/leave.js";
 import dashboard from "./routes/dashboard.js";
 import holiday from "./routes/holiday.js";
 
+// Import models to ensure associations are registered
+import "./models/index.js";
+
 dotenv.config();
-connectDB();
 
 const app = express();
-const PORT = process.env.PORT || 5001;
+const PORT = process.env.PORT || 5000;
 
 app.use(express.json());
 
@@ -28,7 +31,7 @@ app.use(
   cors({
     origin: process.env.CLIENT_URL ? allowedOrigins : true,
     credentials: true,
-  }),
+  })
 );
 
 app.use("/api/user", user);
@@ -37,6 +40,29 @@ app.use("/api/dashboard", dashboard);
 app.use("/api/holiday", holiday);
 
 app.get("/", (req, res) => {
-  res.send("Hello dev");
+  res.send("🚀 Leave Application API running (MySQL / Sequelize)");
 });
-app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
+
+const startServer = async () => {
+  try {
+    // 1. Connect to MySQL Database
+    await connectDB();
+
+    // 2. Synchronize Sequelize Models
+    await sequelize.sync();
+    console.log("✅ Sequelize models synchronized successfully");
+
+    // 3. Seed Default Admin Account if missing
+    await seedAdmin();
+
+    // 4. Start Express Listener
+    app.listen(PORT, () => {
+      console.log(`🚀 Server running on port ${PORT} [Database: MySQL]`);
+    });
+  } catch (error) {
+    console.error("❌ Failed to start server:", error);
+    process.exit(1);
+  }
+};
+
+startServer();

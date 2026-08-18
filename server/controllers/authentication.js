@@ -1,4 +1,5 @@
 import jwt from "jsonwebtoken";
+import { Op } from "sequelize";
 import User from "../models/Users.js";
 
 export const login = async (req, res) => {
@@ -11,8 +12,12 @@ export const login = async (req, res) => {
         .json({ message: "Email and password are required" });
     }
 
+    const normalizedEmail = email.trim().toLowerCase();
+
     const user = await User.findOne({
-      email: { $regex: new RegExp(`^${email.trim()}$`, "i") },
+      where: {
+        email: normalizedEmail,
+      },
     });
 
     if (!user) {
@@ -31,18 +36,15 @@ export const login = async (req, res) => {
     }
 
     const token = jwt.sign(
-      { id: user._id, role: user.role },
+      { id: user.id, role: user.role },
       process.env.JWT_SECRET || "secret123",
       { expiresIn: "7d" },
     );
 
-    const userObj = user.toObject();
-    delete userObj.password;
-
     res.status(200).json({
       message: "Login successful",
       token,
-      user: userObj,
+      user: user.toJSON(),
     });
   } catch (error) {
     console.error("Login error:", error);
@@ -57,7 +59,7 @@ export const getMe = async (req, res) => {
     }
     res.status(200).json({
       message: "Success",
-      user: req.user,
+      user: req.user.toJSON ? req.user.toJSON() : req.user,
     });
   } catch (error) {
     console.error("Get profile error:", error);

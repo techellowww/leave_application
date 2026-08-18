@@ -47,7 +47,7 @@ const UsersModule = () => {
     role: "user",
     employeeId: "",
     joiningDate: "",
-    allotedLeaves: 24,
+    allotedLeaves: 2,
     status: "active",
   });
 
@@ -92,7 +92,7 @@ const UsersModule = () => {
       role: "user",
       employeeId: `EMP${Math.floor(100 + Math.random() * 900)}`,
       joiningDate: new Date().toISOString().split("T")[0],
-      allotedLeaves: 24,
+      allotedLeaves: 2,
       status: "active",
     });
     setIsModalOpen(true);
@@ -110,7 +110,7 @@ const UsersModule = () => {
       role: userItem.role || "user",
       employeeId: userItem.employeeId || "",
       joiningDate: userItem.joiningDate ? new Date(userItem.joiningDate).toISOString().split("T")[0] : "",
-      allotedLeaves: userItem.allotedLeaves ?? 24,
+      allotedLeaves: userItem.allotedLeaves ?? 2,
       status: userItem.status || "active",
     });
     setIsModalOpen(true);
@@ -119,19 +119,50 @@ const UsersModule = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setModalError("");
-    if (!form.name || !form.email || !form.mobileNumber || !form.employeeId || !form.joiningDate) {
+
+    const trimName = form.name ? form.name.trim() : "";
+    const trimEmail = form.email ? form.email.trim() : "";
+    const trimMobile = form.mobileNumber ? form.mobileNumber.trim() : "";
+    const trimEmpId = form.employeeId ? form.employeeId.trim() : "";
+
+    if (!trimName || !trimEmail || !trimMobile || !trimEmpId || !form.joiningDate) {
       const msg = "Please fill in all required fields";
       setModalError(msg);
       showToast(msg, "error");
       return;
     }
 
+    // 1. Email ID Validation
+    const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+    if (!emailRegex.test(trimEmail)) {
+      const msg = "Please enter a valid email address (e.g. user@company.com)";
+      setModalError(msg);
+      showToast(msg, "error");
+      return;
+    }
+
+    // 2. Indian Mobile Number Validation
+    // Accepts 10-digit number starting with 6-9, optionally prefixed with +91 or 0
+    const indianMobileRegex = /^(?:\+91[\-\s]?|0)?[6-9]\d{9}$/;
+    if (!indianMobileRegex.test(trimMobile)) {
+      const msg = "Please enter a valid 10-digit Indian mobile number (e.g. 9876543210 or +919876543210)";
+      setModalError(msg);
+      showToast(msg, "error");
+      return;
+    }
+
+    const payload = {
+      ...form,
+      name: trimName,
+      email: trimEmail,
+      mobileNumber: trimMobile,
+      employeeId: trimEmpId,
+    };
+
     try {
       setSubmitting(true);
       if (editingUserId) {
         // Edit existing user
-        const payload = { ...form };
-        if (!payload.password) delete payload.password; // keep existing password if empty
         await updateUser(editingUserId, payload);
         showToast("Employee details updated successfully", "success");
       } else {
@@ -143,7 +174,7 @@ const UsersModule = () => {
           setSubmitting(false);
           return;
         }
-        await createUser(form);
+        await createUser(payload);
         showToast("New employee added successfully", "success");
       }
       closeModal();
@@ -409,7 +440,7 @@ const UsersModule = () => {
                   type={showPassword ? "text" : "password"}
                   className="form-control"
                   style={{ paddingRight: "2.5rem" }}
-                  placeholder={editingUserId ? "••••••••" : "Create Password"}
+                  placeholder={editingUserId ? "•••••••• (Leave blank to keep current password)" : "Create Password"}
                   value={form.password}
                   onChange={(e) => setForm({ ...form, password: e.target.value })}
                   required={!editingUserId}

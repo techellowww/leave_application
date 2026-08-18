@@ -1,5 +1,6 @@
 import express from "express";
 import bcrypt from "bcryptjs";
+import { Op } from "sequelize";
 import User from "../models/Users.js";
 import {
   create,
@@ -18,12 +19,18 @@ router.post("/login", login);
 
 router.get("/me", protect, getMe);
 
-// router.post("/", protect, authorize(["admin"]), async (req, res) => {
+const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+const indianMobileRegex = /^(?:\+91[\-\s]?|0)?[6-9]\d{9}$/;
+
+// Create user
 router.post("/", async (req, res) => {
   try {
-    const { employeeId, email } = req.body;
+    const { employeeId, email, password, mobileNumber } = req.body;
+
     if (employeeId) {
-      const existingEmp = await User.findOne({ employeeId: employeeId.trim() });
+      const existingEmp = await User.findOne({
+        where: { employeeId: employeeId.trim() },
+      });
       if (existingEmp) {
         return res.status(400).json({
           message: `User with Employee ID '${employeeId}' already exists!`,
@@ -31,33 +38,58 @@ router.post("/", async (req, res) => {
       }
       req.body.employeeId = employeeId.trim();
     }
+
     if (email) {
+      const normalizedEmail = email.trim().toLowerCase();
+      if (!emailRegex.test(normalizedEmail)) {
+        return res.status(400).json({
+          message: "Please enter a valid email address (e.g. user@company.com)",
+        });
+      }
       const existingEmail = await User.findOne({
-        email: email.trim().toLowerCase(),
+        where: { email: normalizedEmail },
       });
       if (existingEmail) {
         return res.status(400).json({
           message: `User with Email '${email}' already exists!`,
         });
       }
-      req.body.email = email.trim().toLowerCase();
+      req.body.email = normalizedEmail;
     }
+
+    if (mobileNumber) {
+      const cleanMobile = mobileNumber.trim();
+      if (!indianMobileRegex.test(cleanMobile)) {
+        return res.status(400).json({
+          message: "Please enter a valid 10-digit Indian mobile number (e.g. 9876543210 or +919876543210)",
+        });
+      }
+      req.body.mobileNumber = cleanMobile;
+    }
+
+    if (password && password.trim() !== "") {
+      req.body.password = password.trim();
+    }
+
     create(req, res, User);
   } catch (err) {
-    console.error(err);
+    console.error("Create user error:", err);
     res.status(500).json({ message: "internal server error" });
   }
 });
 
+// Update user
 router.put("/:id", protect, authorize(["admin"]), async (req, res) => {
   try {
-    const { employeeId, email, password } = req.body;
+    const { employeeId, email, password, mobileNumber } = req.body;
     const userId = req.params.id;
 
     if (employeeId) {
       const existingEmp = await User.findOne({
-        employeeId: employeeId.trim(),
-        _id: { $ne: userId },
+        where: {
+          employeeId: employeeId.trim(),
+          id: { [Op.ne]: userId },
+        },
       });
       if (existingEmp) {
         return res.status(400).json({
@@ -68,16 +100,34 @@ router.put("/:id", protect, authorize(["admin"]), async (req, res) => {
     }
 
     if (email) {
+      const normalizedEmail = email.trim().toLowerCase();
+      if (!emailRegex.test(normalizedEmail)) {
+        return res.status(400).json({
+          message: "Please enter a valid email address (e.g. user@company.com)",
+        });
+      }
       const existingEmail = await User.findOne({
-        email: email.trim().toLowerCase(),
-        _id: { $ne: userId },
+        where: {
+          email: normalizedEmail,
+          id: { [Op.ne]: userId },
+        },
       });
       if (existingEmail) {
         return res.status(400).json({
           message: `User with Email '${email}' already exists!`,
         });
       }
-      req.body.email = email.trim().toLowerCase();
+      req.body.email = normalizedEmail;
+    }
+
+    if (mobileNumber) {
+      const cleanMobile = mobileNumber.trim();
+      if (!indianMobileRegex.test(cleanMobile)) {
+        return res.status(400).json({
+          message: "Please enter a valid 10-digit Indian mobile number (e.g. 9876543210 or +919876543210)",
+        });
+      }
+      req.body.mobileNumber = cleanMobile;
     }
 
     if (password && password.trim() !== "") {
@@ -88,7 +138,7 @@ router.put("/:id", protect, authorize(["admin"]), async (req, res) => {
 
     update(req, res, User);
   } catch (err) {
-    console.error(err);
+    console.error("Update user error:", err);
     res.status(500).json({ message: "internal server error" });
   }
 });

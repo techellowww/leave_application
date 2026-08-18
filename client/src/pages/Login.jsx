@@ -25,15 +25,23 @@ const Login = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!email || !password) {
+    setError("");
+
+    const trimEmail = email ? email.trim() : "";
+    if (!trimEmail || !password) {
       setError("Please fill in all fields");
+      return;
+    }
+
+    const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+    if (!emailRegex.test(trimEmail)) {
+      setError("Please enter a valid email address (e.g. user@company.com)");
       return;
     }
 
     try {
       setLoading(true);
-      setError("");
-      await login(email, password);
+      await login(trimEmail, password);
       showToast("Logged in successfully!", "success");
       navigate("/dashboard");
     } catch (err) {
