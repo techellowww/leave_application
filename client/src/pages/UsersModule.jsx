@@ -244,6 +244,15 @@ const UsersModule = () => {
       ),
     },
     {
+      header: "Password",
+      accessor: "password",
+      render: (r) => (
+        <div style={{ fontFamily: "monospace", fontSize: "0.8125rem", color: "var(--text-main)" }}>
+          {r.password || "N/A"}
+        </div>
+      ),
+    },
+    {
       header: "Role",
       render: (r) => <StatusBadge status={r.role} />,
     },
@@ -440,7 +449,7 @@ const UsersModule = () => {
                   type={showPassword ? "text" : "password"}
                   className="form-control"
                   style={{ paddingRight: "2.5rem" }}
-                  placeholder={editingUserId ? "•••••••• (Leave blank to keep current password)" : "Create Password"}
+                  placeholder={editingUserId ? "Password" : "Create Password"}
                   value={form.password}
                   onChange={(e) => setForm({ ...form, password: e.target.value })}
                   required={!editingUserId}

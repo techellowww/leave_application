@@ -2,7 +2,6 @@ import express from "express";
 import dotenv from "dotenv";
 import cors from "cors";
 import sequelize, { connectDB } from "./config/dbConfig.js";
-import { seedAdmin } from "./config/seedAdmin.js";
 import user from "./routes/user.js";
 import leave from "./routes/leave.js";
 import dashboard from "./routes/dashboard.js";
@@ -31,7 +30,7 @@ app.use(
   cors({
     origin: process.env.CLIENT_URL ? allowedOrigins : true,
     credentials: true,
-  })
+  }),
 );
 
 app.use("/api/user", user);
@@ -52,8 +51,6 @@ const startServer = async () => {
     await sequelize.sync();
     console.log("✅ Sequelize models synchronized successfully");
 
-    // 3. Seed Default Admin Account if missing
-    await seedAdmin();
 
     // 4. Start Express Listener
     app.listen(PORT, () => {

@@ -1,5 +1,4 @@
 import { DataTypes } from "sequelize";
-import bcrypt from "bcryptjs";
 import sequelize from "../config/dbConfig.js";
 
 const User = sequelize.define(
@@ -32,7 +31,9 @@ const User = sequelize.define(
       validate: {
         isIndianMobile(value) {
           if (!/^(?:\+91[\-\s]?|0)?[6-9]\d{9}$/.test(value)) {
-            throw new Error("Please enter a valid 10-digit Indian mobile number");
+            throw new Error(
+              "Please enter a valid 10-digit Indian mobile number",
+            );
           }
         },
       },
@@ -69,18 +70,13 @@ const User = sequelize.define(
       { unique: true, fields: ["email"] },
       { unique: true, fields: ["employeeId"] },
     ],
-  }
+  },
 );
 
 // Instance method to compare password
 User.prototype.matchPassword = async function (enteredPassword) {
   if (!this.password || !enteredPassword) return false;
-  if (this.password === enteredPassword) return true;
-  try {
-    return await bcrypt.compare(enteredPassword, this.password);
-  } catch (err) {
-    return false;
-  }
+  return this.password === enteredPassword;
 };
 
 // Custom serialization to include _id and password

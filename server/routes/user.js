@@ -1,5 +1,4 @@
 import express from "express";
-import bcrypt from "bcryptjs";
 import { Op } from "sequelize";
 import User from "../models/Users.js";
 import {
