@@ -103,20 +103,34 @@ const LeaveModule = () => {
     }
   };
 
+  const getTodayString = () => {
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, "0");
+    const day = String(today.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  };
+
   // Calculate Total Days automatically whenever dates change
   const handleDateChange = (field, value) => {
     const newForm = { ...formData, [field]: value };
+    const todayStr = getTodayString();
+
+    if (newForm.fromDate && newForm.fromDate < todayStr) {
+      setDateError("From Date cannot be in the past");
+      setFormData({ ...newForm, totalDays: 0 });
+      return;
+    }
 
     if (newForm.fromDate && newForm.toDate) {
-      const start = new Date(newForm.fromDate);
-      const end = new Date(newForm.toDate);
-
-      if (end < start) {
+      if (newForm.toDate < newForm.fromDate) {
         setDateError("To Date cannot be earlier than From Date");
         setFormData({ ...newForm, totalDays: 0 });
         return;
       }
       setDateError("");
+      const start = new Date(newForm.fromDate);
+      const end = new Date(newForm.toDate);
       const diffTime = Math.abs(end - start);
       const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
       setFormData({ ...newForm, totalDays: diffDays });
@@ -130,6 +144,13 @@ const LeaveModule = () => {
     e.preventDefault();
     if (dateError) {
       showToast("Please fix date range errors", "error");
+      return;
+    }
+
+    const todayStr = getTodayString();
+    if (formData.fromDate && formData.fromDate < todayStr) {
+      setDateError("From Date cannot be in the past");
+      showToast("From Date cannot be in the past", "error");
       return;
     }
 
@@ -587,6 +608,7 @@ const LeaveModule = () => {
                 className="form-control"
                 value={formData.fromDate}
                 onChange={(e) => handleDateChange("fromDate", e.target.value)}
+                min={getTodayString()}
                 required
               />
             </div>
@@ -600,6 +622,7 @@ const LeaveModule = () => {
                 className="form-control"
                 value={formData.toDate}
                 onChange={(e) => handleDateChange("toDate", e.target.value)}
+                min={formData.fromDate || getTodayString()}
                 required
               />
             </div>

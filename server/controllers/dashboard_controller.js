@@ -1,39 +1,49 @@
+import { Op } from "sequelize";
+import sequelize from "../config/dbConfig.js";
 import User from "../models/Users.js";
 import Leave from "../models/Leave.js";
 import Holiday from "../models/Holiday.js";
 
 export const leaveSummary = async (req, res) => {
   try {
-    const userFilter = req.user && req.user.role !== "admin" ? { employeeId: req.user.employeeId } : {};
-    const users = await User.find(userFilter).select("name employeeId allotedLeaves");
+    const userFilter =
+      req.user && req.user.role !== "admin"
+        ? { employeeId: req.user.employeeId }
+        : {};
 
-    const approvedLeaves = await Leave.aggregate([
-      { $match: { status: "approved" } },
-      {
-        $group: {
-          _id: "$assignedTo",
-          takenLeaves: { $sum: "$totalDays" },
-        },
-      },
-    ]);
+    const users = await User.findAll({
+      where: userFilter,
+      attributes: ["id", "name", "employeeId", "allotedLeaves"],
+    });
+
+    const approvedLeaves = await Leave.findAll({
+      where: { status: "approved" },
+      attributes: [
+        "assignedTo",
+        [sequelize.fn("SUM", sequelize.col("totalDays")), "takenLeaves"],
+      ],
+      group: ["assignedTo"],
+      raw: true,
+    });
 
     const takenMap = {};
     approvedLeaves.forEach((item) => {
-      takenMap[item._id] = item.takenLeaves;
+      takenMap[item.assignedTo] = parseFloat(item.takenLeaves || 0);
     });
 
     const result = users.map((user) => {
-      const allotedLeaves = user.allotedLeaves || 0;
-      const takenLeaves = takenMap[user.employeeId] || 0;
-      const remainingLeaves = allotedLeaves - takenLeaves;
+      const userObj = user.toJSON();
+      const allotedLeaves = userObj.allotedLeaves || 0;
+      const takenLeaves = takenMap[userObj.employeeId] || 0;
+      const remainingLeaves = Math.max(allotedLeaves - takenLeaves, 0);
 
       return {
-        _id: user._id,
-        name: user.name,
-        employeeId: user.employeeId,
+        _id: userObj.id,
+        name: userObj.name,
+        employeeId: userObj.employeeId,
         allotedLeaves,
         takenLeaves,
-        remainingLeaves: remainingLeaves < 0 ? 0 : remainingLeaves,
+        remainingLeaves,
       };
     });
 
@@ -42,7 +52,7 @@ export const leaveSummary = async (req, res) => {
       data: result,
     });
   } catch (error) {
-    console.log(error);
+    console.error("Leave summary error:", error);
     return res.status(500).json({
       success: false,
       message: "Server error while fetching employee leave list",
@@ -58,14 +68,21 @@ export const monthlySummary = async (req, res) => {
       return res.status(400).json({ message: "month and year are required" });
     }
 
-    const monthNum = parseInt(month);
-    const yearNum = parseInt(year);
+    const monthNum = parseInt(month, 10);
+    const yearNum = parseInt(year, 10);
 
     const totalDaysInMonth = new Date(yearNum, monthNum, 0).getDate();
 
-    const start = new Date(yearNum, monthNum - 1, 1);
-    const end = new Date(yearNum, monthNum, 0, 23, 59, 59);
-    const holidays = await Holiday.find({ date: { $gte: start, $lte: end } });
+    const startStr = `${yearNum}-${String(monthNum).padStart(2, "0")}-01`;
+    const endStr = `${yearNum}-${String(monthNum).padStart(2, "0")}-${String(totalDaysInMonth).padStart(2, "0")}`;
+
+    const holidays = await Holiday.findAll({
+      where: {
+        date: {
+          [Op.between]: [startStr, endStr],
+        },
+      },
+    });
 
     let sundaysCount = 0;
     const sundayDates = new Set();
@@ -74,13 +91,17 @@ export const monthlySummary = async (req, res) => {
       const currentDate = new Date(yearNum, monthNum - 1, day);
       if (currentDate.getDay() === 0) {
         sundaysCount++;
-        sundayDates.add(currentDate.toDateString());
+        const yyyy = currentDate.getFullYear();
+        const mm = String(currentDate.getMonth() + 1).padStart(2, "0");
+        const dd = String(currentDate.getDate()).padStart(2, "0");
+        sundayDates.add(`${yyyy}-${mm}-${dd}`);
       }
     }
 
-    const holidaysNotOnSunday = holidays.filter(
-      (h) => !sundayDates.has(new Date(h.date).toDateString()),
-    ).length;
+    const holidaysNotOnSunday = holidays.filter((h) => {
+      const hDateStr = String(h.date).split("T")[0];
+      return !sundayDates.has(hDateStr);
+    }).length;
 
     const totalWorkingDays =
       totalDaysInMonth - sundaysCount - holidaysNotOnSunday;
@@ -97,7 +118,7 @@ export const monthlySummary = async (req, res) => {
       },
     });
   } catch (error) {
-    console.log(error);
+    console.error("Monthly summary error:", error);
     res.status(500).json({ message: "internal server error" });
   }
 };
@@ -112,35 +133,41 @@ export const dateWiseReport = async (req, res) => {
         .json({ message: "fromDate and toDate are required" });
     }
 
-    const data = await Leave.aggregate([
-      { $match: buildDateFilter(fromDate, toDate) },
-      {
-        $lookup: {
-          from: "users",
-          localField: "assignedTo",
-          foreignField: "employeeId",
+    const leaves = await Leave.findAll({
+      where: {
+        fromDate: {
+          [Op.gte]: fromDate,
+          [Op.lte]: toDate,
+        },
+      },
+      include: [
+        {
+          model: User,
           as: "employee",
+          attributes: ["name"],
         },
-      },
-      { $unwind: { path: "$employee", preserveNullAndEmptyArrays: true } },
-      {
-        $project: {
-          employeeName: "$employee.name",
-          employeeId: "$assignedTo",
-          fromDate: 1,
-          toDate: 1,
-          totalDays: 1,
-          status: 1,
-          leaveType: 1,
-          reason: 1,
-        },
-      },
-      { $sort: { fromDate: 1 } },
-    ]);
+      ],
+      order: [["fromDate", "ASC"]],
+    });
+
+    const data = leaves.map((l) => {
+      const leaveObj = l.toJSON();
+      return {
+        _id: leaveObj.id,
+        employeeName: l.employee ? l.employee.name : "",
+        employeeId: leaveObj.assignedTo,
+        fromDate: leaveObj.fromDate,
+        toDate: leaveObj.toDate,
+        totalDays: leaveObj.totalDays,
+        status: leaveObj.status,
+        leaveType: leaveObj.leaveType,
+        reason: leaveObj.reason,
+      };
+    });
 
     res.status(200).json({ message: "Success", data });
   } catch (error) {
-    console.log(error);
+    console.error("Date wise report error:", error);
     res.status(500).json({ message: "internal server error" });
   }
 };
@@ -150,39 +177,52 @@ export const singleEmployeeReport = async (req, res) => {
     const { employeeId } = req.params;
     const { fromDate, toDate } = req.query;
 
-    const user = await User.findOne({ employeeId }).select(
-      "name employeeId allotedLeaves",
-    );
+    const user = await User.findOne({
+      where: { employeeId },
+      attributes: ["id", "name", "employeeId", "allotedLeaves"],
+    });
 
     if (!user) {
       return res.status(404).json({ message: "Employee not found" });
     }
 
-    const filter = {
+    const whereConditions = {
       assignedTo: employeeId,
-      ...buildDateFilter(fromDate, toDate),
     };
-    const leaves = await Leave.find(filter).sort({ fromDate: 1 });
+
+    if (fromDate && toDate) {
+      whereConditions.fromDate = {
+        [Op.gte]: fromDate,
+        [Op.lte]: toDate,
+      };
+    }
+
+    const leaves = await Leave.findAll({
+      where: whereConditions,
+      order: [["fromDate", "ASC"]],
+    });
 
     const takenLeaves = leaves
       .filter((l) => l.status === "approved")
-      .reduce((sum, l) => sum + l.totalDays, 0);
+      .reduce((sum, l) => sum + parseFloat(l.totalDays || 0), 0);
+
+    const userObj = user.toJSON();
 
     res.status(200).json({
       message: "Success",
       data: {
         employee: {
-          name: user.name,
-          employeeId: user.employeeId,
-          allotedLeaves: user.allotedLeaves,
+          name: userObj.name,
+          employeeId: userObj.employeeId,
+          allotedLeaves: userObj.allotedLeaves,
           takenLeaves,
-          remainingLeaves: Math.max(user.allotedLeaves - takenLeaves, 0),
+          remainingLeaves: Math.max(userObj.allotedLeaves - takenLeaves, 0),
         },
         leaves,
       },
     });
   } catch (error) {
-    console.log(error);
+    console.error("Single employee report error:", error);
     res.status(500).json({ message: "internal server error" });
   }
 };
@@ -190,44 +230,47 @@ export const singleEmployeeReport = async (req, res) => {
 export const allEmployeeReport = async (req, res) => {
   try {
     const { fromDate, toDate } = req.query;
-    const dateFilter =
-      fromDate && toDate ? buildDateFilter(fromDate, toDate) : {};
+    const whereConditions = {};
 
-    const users = await User.find().select("name employeeId allotedLeaves");
-    const leaves = await Leave.find(dateFilter);
+    if (fromDate && toDate) {
+      whereConditions.fromDate = {
+        [Op.gte]: fromDate,
+        [Op.lte]: toDate,
+      };
+    }
+
+    const users = await User.findAll({
+      attributes: ["id", "name", "employeeId", "allotedLeaves"],
+    });
+
+    const leaves = await Leave.findAll({
+      where: whereConditions,
+      order: [["fromDate", "ASC"]],
+    });
 
     const data = users.map((user) => {
+      const userObj = user.toJSON();
       const employeeLeaves = leaves.filter(
-        (l) => l.assignedTo === user.employeeId,
+        (l) => l.assignedTo === userObj.employeeId,
       );
       const takenLeaves = employeeLeaves
         .filter((l) => l.status === "approved")
-        .reduce((sum, l) => sum + l.totalDays, 0);
+        .reduce((sum, l) => sum + parseFloat(l.totalDays || 0), 0);
 
       return {
-        name: user.name,
-        employeeId: user.employeeId,
-        allotedLeaves: user.allotedLeaves,
+        _id: userObj.id,
+        name: userObj.name,
+        employeeId: userObj.employeeId,
+        allotedLeaves: userObj.allotedLeaves,
         takenLeaves,
-        remainingLeaves: Math.max(user.allotedLeaves - takenLeaves, 0),
+        remainingLeaves: Math.max(userObj.allotedLeaves - takenLeaves, 0),
         leaves: employeeLeaves,
       };
     });
 
     res.status(200).json({ message: "Success", data });
   } catch (error) {
-    console.log(error);
+    console.error("All employee report error:", error);
     res.status(500).json({ message: "internal server error" });
   }
 };
-
-const buildDateFilter = (fromDate, toDate) => {
-  const filter = {};
-  if (fromDate || toDate) {
-    filter.fromDate = {};
-    if (fromDate) filter.fromDate.$gte = new Date(fromDate);
-    if (toDate) filter.fromDate.$lte = new Date(toDate);
-  }
-  return filter;
-};
-

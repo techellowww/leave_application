@@ -28,6 +28,8 @@ import {
   Filter,
   Download,
   Building,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import {
   PieChart,
@@ -55,6 +57,8 @@ const Dashboard = () => {
   // Holidays Calendar State
   const [holidays, setHolidays] = useState([]);
   const [loadingHolidays, setLoadingHolidays] = useState(true);
+  const [holidayPage, setHolidayPage] = useState(1);
+  const holidayPageSize = 10;
   const [isHolidayModalOpen, setIsHolidayModalOpen] = useState(false);
   const [holidayForm, setHolidayForm] = useState({ date: "", name: "", type: "holiday" });
   const [submittingHoliday, setSubmittingHoliday] = useState(false);
@@ -62,11 +66,26 @@ const Dashboard = () => {
   const [deletingHoliday, setDeletingHoliday] = useState(false);
 
   // Quick Report Section State
+  const getFirstDayOfMonthStr = () => {
+    const d = new Date();
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, "0");
+    return `${year}-${month}-01`;
+  };
+
+  const getTodayStr = () => {
+    const d = new Date();
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  };
+
   const [usersList, setUsersList] = useState([]);
   const [reportType, setReportType] = useState("all"); // 'all', 'single', 'date'
   const [reportEmployeeId, setReportEmployeeId] = useState("");
-  const [reportFromDate, setReportFromDate] = useState("");
-  const [reportToDate, setReportToDate] = useState("");
+  const [reportFromDate, setReportFromDate] = useState(getFirstDayOfMonthStr());
+  const [reportToDate, setReportToDate] = useState(getTodayStr());
   const [reportResults, setReportResults] = useState(null);
   const [loadingReport, setLoadingReport] = useState(false);
 
@@ -174,6 +193,16 @@ const Dashboard = () => {
 
   const handleGenerateReport = async (e) => {
     e.preventDefault();
+    if (!reportFromDate || !reportToDate) {
+      showToast("Please select From Date and To Date", "error");
+      return;
+    }
+
+    if (reportToDate < reportFromDate) {
+      showToast("To Date cannot be earlier than From Date", "error");
+      return;
+    }
+
     try {
       setLoadingReport(true);
       setReportResults(null);
@@ -185,18 +214,13 @@ const Dashboard = () => {
           return;
         }
         const res = await getSingleEmployeeReport(reportEmployeeId, reportFromDate, reportToDate);
-        setReportResults({ type: "single", data: res.data });
+        setReportResults({ type: "single", data: res.data, fromDate: reportFromDate, toDate: reportToDate });
       } else if (reportType === "date") {
-        if (!reportFromDate || !reportToDate) {
-          showToast("Please select From Date and To Date", "error");
-          setLoadingReport(false);
-          return;
-        }
         const res = await getDateWiseReport(reportFromDate, reportToDate);
-        setReportResults({ type: "date", data: res.data });
+        setReportResults({ type: "date", data: res.data, fromDate: reportFromDate, toDate: reportToDate });
       } else {
         const res = await getAllEmployeesReport(reportFromDate, reportToDate);
-        setReportResults({ type: "all", data: res.data });
+        setReportResults({ type: "all", data: res.data, fromDate: reportFromDate, toDate: reportToDate });
       }
       showToast("Report generated successfully", "success");
     } catch (err) {
@@ -206,14 +230,18 @@ const Dashboard = () => {
     }
   };
 
-  const exportToCSV = (filename, rows) => {
+  const exportToCSV = (filename, rows, headerLines = []) => {
     if (!rows || !rows.length) {
       showToast("No data available to download", "warning");
       return;
     }
     const separator = ",";
     const keys = Object.keys(rows[0]);
-    const csvContent =
+    let csvContent = "";
+    if (headerLines && headerLines.length) {
+      csvContent += headerLines.join("\n") + "\n\n";
+    }
+    csvContent +=
       keys.join(separator) +
       "\n" +
       rows
@@ -249,7 +277,18 @@ const Dashboard = () => {
       return;
     }
 
-    const dateStr = new Date().toISOString().split("T")[0];
+    const fromDate = reportResults.fromDate || reportFromDate;
+    const toDate = reportResults.toDate || reportToDate;
+
+    if (!fromDate || !toDate) {
+      showToast("From Date and To Date are required to export report", "error");
+      return;
+    }
+
+    const headerLines = [
+      `Date Range: ${fromDate} to ${toDate}`,
+      `Generated On: ${new Date().toLocaleDateString()}`
+    ];
 
     if (reportResults.type === "all") {
       const rows = (reportResults.data || []).map((emp) => ({
@@ -262,7 +301,7 @@ const Dashboard = () => {
         "Remaining Leaves": emp.remainingLeaves || 0,
         "Total Leave Requests": emp.leaves?.length || 0,
       }));
-      exportToCSV(`Leave_Report_All_Employees_${dateStr}.csv`, rows);
+      exportToCSV(`Leave_Report_All_Employees_${fromDate}_to_${toDate}.csv`, rows, headerLines);
     } else if (reportResults.type === "single") {
       const emp = reportResults.data.employee || {};
       const leaves = reportResults.data.leaves || [];
@@ -276,7 +315,7 @@ const Dashboard = () => {
         "Status": l.status || "",
         "Reason": l.reason || "",
       }));
-      exportToCSV(`Leave_Report_${emp.employeeId || "Employee"}_${dateStr}.csv`, rows);
+      exportToCSV(`Leave_Report_${emp.employeeId || "Employee"}_${fromDate}_to_${toDate}.csv`, rows, headerLines);
     } else if (reportResults.type === "date") {
       const rows = (reportResults.data || []).map((l) => ({
         "Employee Name": l.employeeName || "",
@@ -287,7 +326,7 @@ const Dashboard = () => {
         "Total Days": l.totalDays || 0,
         "Status": l.status || "",
       }));
-      exportToCSV(`Leave_Report_DateWise_${dateStr}.csv`, rows);
+      exportToCSV(`Leave_Report_DateWise_${fromDate}_to_${toDate}.csv`, rows, headerLines);
     }
   };
 
@@ -548,61 +587,116 @@ const Dashboard = () => {
             )}
           </div>
 
-          <div style={{ maxHeight: "320px", overflowY: "auto" }}>
+          <div>
             {loadingHolidays ? (
               <div style={{ textAlign: "center", padding: "2rem" }}>
                 <span className="spinner spinner-dark" />
               </div>
             ) : holidays.length > 0 ? (
-              <div style={{ display: "flex", flexDirection: "column", gap: "0.625rem" }}>
-                {holidays.map((item) => (
-                  <div
-                    key={item._id}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      padding: "0.75rem 1rem",
-                      backgroundColor: "var(--bg-slate)",
-                      borderRadius: "var(--radius-md)",
-                      border: "1px solid var(--border-color)",
-                    }}
-                  >
-                    <div style={{ display: "flex", alignItems: "center", gap: "0.875rem" }}>
+              <>
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.625rem" }}>
+                  {holidays
+                    .slice(
+                      (holidayPage - 1) * holidayPageSize,
+                      holidayPage * holidayPageSize
+                    )
+                    .map((item) => (
                       <div
+                        key={item._id}
                         style={{
-                          padding: "0.375rem 0.625rem",
-                          borderRadius: "6px",
-                          backgroundColor: "#eef2ff",
-                          color: "#4f46e5",
-                          fontWeight: 700,
-                          fontSize: "0.8125rem",
-                          textAlign: "center",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          padding: "0.75rem 1rem",
+                          backgroundColor: "var(--bg-slate)",
+                          borderRadius: "var(--radius-md)",
+                          border: "1px solid var(--border-color)",
                         }}
                       >
-                        {new Date(item.date).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
-                      </div>
-                      <div>
-                        <div style={{ fontWeight: 700, fontSize: "0.875rem" }}>{item.name}</div>
-                        <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
-                          {new Date(item.date).toLocaleDateString("en-US", { weekday: "long", year: "numeric" })} • {item.type}
+                        <div style={{ display: "flex", alignItems: "center", gap: "0.875rem" }}>
+                          <div
+                            style={{
+                              padding: "0.375rem 0.625rem",
+                              borderRadius: "6px",
+                              backgroundColor: "#eef2ff",
+                              color: "#4f46e5",
+                              fontWeight: 700,
+                              fontSize: "0.8125rem",
+                              textAlign: "center",
+                            }}
+                          >
+                            {new Date(item.date).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                          </div>
+                          <div>
+                            <div style={{ fontWeight: 700, fontSize: "0.875rem" }}>{item.name}</div>
+                            <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
+                              {new Date(item.date).toLocaleDateString("en-US", { weekday: "long", year: "numeric" })} • {item.type}
+                            </div>
+                          </div>
                         </div>
-                      </div>
-                    </div>
 
-                    {isAdmin && (
+                        {isAdmin && (
+                          <button
+                            className="btn-icon"
+                            style={{ backgroundColor: "transparent", color: "#ef4444", border: "none" }}
+                            onClick={() => handleDeleteHoliday(item._id)}
+                            title="Delete Holiday"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                </div>
+
+                {holidays.length > holidayPageSize && (
+                  <div className="pagination-wrapper" style={{ marginTop: "1rem" }}>
+                    <div className="pagination-info">
+                      Showing <span>{(holidayPage - 1) * holidayPageSize + 1}</span> to{" "}
+                      <span>{Math.min(holidayPage * holidayPageSize, holidays.length)}</span> of{" "}
+                      <span>{holidays.length}</span> entries
+                    </div>
+                    <div className="pagination-controls">
                       <button
-                        className="btn-icon"
-                        style={{ backgroundColor: "transparent", color: "#ef4444", border: "none" }}
-                        onClick={() => handleDeleteHoliday(item._id)}
-                        title="Delete Holiday"
+                        className="pagination-btn"
+                        onClick={() => setHolidayPage((prev) => Math.max(prev - 1, 1))}
+                        disabled={holidayPage === 1}
+                        aria-label="Previous page"
                       >
-                        <Trash2 size={16} />
+                        <ChevronLeft size={16} />
+                        <span>Previous</span>
                       </button>
-                    )}
+                      <div className="pagination-pages">
+                        {Array.from(
+                          { length: Math.ceil(holidays.length / holidayPageSize) },
+                          (_, i) => i + 1
+                        ).map((p) => (
+                          <button
+                            key={p}
+                            className={`pagination-page-num ${p === holidayPage ? "active" : ""}`}
+                            onClick={() => setHolidayPage(p)}
+                          >
+                            {p}
+                          </button>
+                        ))}
+                      </div>
+                      <button
+                        className="pagination-btn"
+                        onClick={() =>
+                          setHolidayPage((prev) =>
+                            Math.min(prev + 1, Math.ceil(holidays.length / holidayPageSize))
+                          )
+                        }
+                        disabled={holidayPage >= Math.ceil(holidays.length / holidayPageSize)}
+                        aria-label="Next page"
+                      >
+                        <span>Next</span>
+                        <ChevronRight size={16} />
+                      </button>
+                    </div>
                   </div>
-                ))}
-              </div>
+                )}
+              </>
             ) : (
               <div className="empty-state" style={{ padding: "2rem" }}>
                 <p>No holidays added yet.</p>
@@ -663,22 +757,29 @@ const Dashboard = () => {
               )}
 
               <div className="form-group" style={{ marginBottom: 0 }}>
-                <label className="form-label">From Date</label>
+                <label className="form-label">
+                  From Date <span className="required-star">*</span>
+                </label>
                 <input
                   type="date"
                   className="form-control"
                   value={reportFromDate}
                   onChange={(e) => setReportFromDate(e.target.value)}
+                  required
                 />
               </div>
 
               <div className="form-group" style={{ marginBottom: 0 }}>
-                <label className="form-label">To Date</label>
+                <label className="form-label">
+                  To Date <span className="required-star">*</span>
+                </label>
                 <input
                   type="date"
                   className="form-control"
                   value={reportToDate}
                   onChange={(e) => setReportToDate(e.target.value)}
+                  min={reportFromDate || undefined}
+                  required
                 />
               </div>
 

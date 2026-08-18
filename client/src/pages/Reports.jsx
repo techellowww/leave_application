@@ -13,14 +13,29 @@ import autoTable from "jspdf-autotable";
 import * as XLSX from "xlsx";
 import { FileSpreadsheet, Filter, FileText } from "lucide-react";
 
+const getFirstDayOfMonthStr = () => {
+  const d = new Date();
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  return `${year}-${month}-01`;
+};
+
+const getTodayStr = () => {
+  const d = new Date();
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
 const Reports = () => {
   const { showToast } = useToast();
 
   const [usersList, setUsersList] = useState([]);
   const [reportType, setReportType] = useState("all");
   const [reportEmployeeId, setReportEmployeeId] = useState("");
-  const [reportFromDate, setReportFromDate] = useState("");
-  const [reportToDate, setReportToDate] = useState("");
+  const [reportFromDate, setReportFromDate] = useState(getFirstDayOfMonthStr());
+  const [reportToDate, setReportToDate] = useState(getTodayStr());
 
   const [reportResults, setReportResults] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -43,8 +58,15 @@ const Reports = () => {
   const loadDefaultReport = async () => {
     try {
       setLoading(true);
-      const res = await getAllEmployeesReport();
-      setReportResults({ type: "all", data: res.data });
+      const from = getFirstDayOfMonthStr();
+      const to = getTodayStr();
+      const res = await getAllEmployeesReport(from, to);
+      setReportResults({
+        type: "all",
+        data: res.data,
+        fromDate: from,
+        toDate: to,
+      });
     } catch (err) {
       console.error(err);
     } finally {
@@ -54,6 +76,16 @@ const Reports = () => {
 
   const handleGenerateReport = async (e) => {
     e.preventDefault();
+    if (!reportFromDate || !reportToDate) {
+      showToast("Please select From Date and To Date", "error");
+      return;
+    }
+
+    if (reportToDate < reportFromDate) {
+      showToast("To Date cannot be earlier than From Date", "error");
+      return;
+    }
+
     try {
       setLoading(true);
       setReportResults(null);
@@ -67,26 +99,36 @@ const Reports = () => {
         const res = await getSingleEmployeeReport(
           reportEmployeeId,
           reportFromDate,
-          reportToDate,
+          reportToDate
         );
-        setReportResults({ type: "single", data: res.data });
+        setReportResults({
+          type: "single",
+          data: res.data,
+          fromDate: reportFromDate,
+          toDate: reportToDate,
+        });
       } else if (reportType === "date") {
-        if (!reportFromDate || !reportToDate) {
-          showToast("Please select From Date and To Date", "error");
-          setLoading(false);
-          return;
-        }
         const res = await getDateWiseReport(reportFromDate, reportToDate);
-        setReportResults({ type: "date", data: res.data });
+        setReportResults({
+          type: "date",
+          data: res.data,
+          fromDate: reportFromDate,
+          toDate: reportToDate,
+        });
       } else {
         const res = await getAllEmployeesReport(reportFromDate, reportToDate);
-        setReportResults({ type: "all", data: res.data });
+        setReportResults({
+          type: "all",
+          data: res.data,
+          fromDate: reportFromDate,
+          toDate: reportToDate,
+        });
       }
       showToast("Report generated successfully", "success");
     } catch (err) {
       showToast(
         err.response?.data?.message || "Failed to generate report",
-        "error",
+        "error"
       );
     } finally {
       setLoading(false);
@@ -99,55 +141,103 @@ const Reports = () => {
       return;
     }
 
-    const dateStr = new Date().toISOString().split("T")[0];
+    const fromDate = reportResults.fromDate || reportFromDate;
+    const toDate = reportResults.toDate || reportToDate;
+
+    if (!fromDate || !toDate) {
+      showToast("From Date and To Date are required to download Excel report", "error");
+      return;
+    }
+
+    const dateRangeStr = `${fromDate} to ${toDate}`;
+    let reportTitle = "";
     let filename = "";
-    let rows = [];
+    let headers = [];
+    let rowsData = [];
 
     if (reportResults.type === "all") {
-      filename = `Leave_Report_All_Employees_${dateStr}.xlsx`;
-      rows = (reportResults.data || []).map((emp) => ({
-        "Employee Name": emp.name || "",
-        "Employee ID": emp.employeeId || "",
-        "Office Email": emp.email || "",
-        Role: emp.role || "",
-        "Allotted Leaves": emp.allotedLeaves || 0,
-        "Leaves Taken": emp.takenLeaves || 0,
-        "Remaining Leaves": emp.remainingLeaves || 0,
-        "Total Leave Requests": emp.leaves?.length || 0,
-      }));
+      reportTitle = "All Employees Leave Summary Report";
+      filename = `Leave_Report_All_Employees_${fromDate}_to_${toDate}.xlsx`;
+      headers = [
+        "Employee Name",
+        "Employee ID",
+        "Office Email",
+        "Role",
+        "Allotted Leaves",
+        "Leaves Taken",
+        "Remaining Leaves",
+        "Total Leave Requests",
+      ];
+      rowsData = (reportResults.data || []).map((emp) => [
+        emp.name || "",
+        emp.employeeId || "",
+        emp.email || "",
+        emp.role || "",
+        emp.allotedLeaves || 0,
+        emp.takenLeaves || 0,
+        emp.remainingLeaves || 0,
+        emp.leaves?.length || 0,
+      ]);
     } else if (reportResults.type === "single") {
       const emp = reportResults.data.employee || {};
       const leaves = reportResults.data.leaves || [];
-      filename = `Leave_Report_${emp.employeeId || "Employee"}_${dateStr}.xlsx`;
-      rows = leaves.map((l) => ({
-        "Employee Name": emp.name || "",
-        "Employee ID": emp.employeeId || "",
-        "From Date": l.fromDate
-          ? new Date(l.fromDate).toLocaleDateString()
-          : "",
-        "To Date": l.toDate ? new Date(l.toDate).toLocaleDateString() : "",
-        "Leave Type": l.leaveType || "",
-        "Total Days": l.totalDays || 0,
-        Status: l.status || "",
-        Reason: l.reason || "",
-      }));
+      reportTitle = `Leave Detailed Report - ${emp.name || "Employee"} (${emp.employeeId || ""})`;
+      filename = `Leave_Report_${emp.employeeId || "Employee"}_${fromDate}_to_${toDate}.xlsx`;
+      headers = [
+        "Employee Name",
+        "Employee ID",
+        "From Date",
+        "To Date",
+        "Leave Type",
+        "Total Days",
+        "Status",
+        "Reason",
+      ];
+      rowsData = leaves.map((l) => [
+        emp.name || "",
+        emp.employeeId || "",
+        l.fromDate ? new Date(l.fromDate).toLocaleDateString() : "",
+        l.toDate ? new Date(l.toDate).toLocaleDateString() : "",
+        l.leaveType || "",
+        l.totalDays || 0,
+        l.status || "",
+        l.reason || "",
+      ]);
     } else if (reportResults.type === "date") {
-      filename = `Leave_Report_DateWise_${dateStr}.xlsx`;
-      rows = (reportResults.data || []).map((l) => ({
-        "Employee Name": l.employeeName || "",
-        "Employee ID": l.employeeId || "",
-        "From Date": l.fromDate
-          ? new Date(l.fromDate).toLocaleDateString()
-          : "",
-        "To Date": l.toDate ? new Date(l.toDate).toLocaleDateString() : "",
-        "Leave Type": l.leaveType || "",
-        "Total Days": l.totalDays || 0,
-        Status: l.status || "",
-        Reason: l.reason || "",
-      }));
+      reportTitle = "Date-Wise Detailed Leave Report";
+      filename = `Leave_Report_DateWise_${fromDate}_to_${toDate}.xlsx`;
+      headers = [
+        "Employee Name",
+        "Employee ID",
+        "From Date",
+        "To Date",
+        "Leave Type",
+        "Total Days",
+        "Status",
+        "Reason",
+      ];
+      rowsData = (reportResults.data || []).map((l) => [
+        l.employeeName || "",
+        l.employeeId || "",
+        l.fromDate ? new Date(l.fromDate).toLocaleDateString() : "",
+        l.toDate ? new Date(l.toDate).toLocaleDateString() : "",
+        l.leaveType || "",
+        l.totalDays || 0,
+        l.status || "",
+        l.reason || "",
+      ]);
     }
 
-    const worksheet = XLSX.utils.json_to_sheet(rows);
+    const sheetData = [
+      [reportTitle],
+      [`Date Range: ${dateRangeStr}`],
+      [`Generated Date: ${new Date().toLocaleDateString()}`],
+      [],
+      headers,
+      ...rowsData,
+    ];
+
+    const worksheet = XLSX.utils.aoa_to_sheet(sheetData);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Leave Report");
     XLSX.writeFile(workbook, filename);
@@ -160,6 +250,15 @@ const Reports = () => {
       return;
     }
 
+    const fromDate = reportResults.fromDate || reportFromDate;
+    const toDate = reportResults.toDate || reportToDate;
+
+    if (!fromDate || !toDate) {
+      showToast("From Date and To Date are required to download PDF report", "error");
+      return;
+    }
+
+    const dateRangeStr = `${fromDate} to ${toDate}`;
     const doc = new jsPDF();
     const formattedDate = new Date().toLocaleDateString("en-US", {
       month: "short",
@@ -168,13 +267,13 @@ const Reports = () => {
     });
 
     let title = "Leave Application Report";
-    let filename = `Leave_Report_${new Date().toISOString().split("T")[0]}.pdf`;
+    let filename = `Leave_Report_${fromDate}_to_${toDate}.pdf`;
     let head = [];
     let body = [];
 
     if (reportResults.type === "all") {
       title = "All Employees Leave Summary Report";
-      filename = `Leave_Report_All_Employees_${new Date().toISOString().split("T")[0]}.pdf`;
+      filename = `Leave_Report_All_Employees_${fromDate}_to_${toDate}.pdf`;
       head = [
         [
           "Employee Name",
@@ -201,7 +300,7 @@ const Reports = () => {
       const emp = reportResults.data.employee || {};
       const leaves = reportResults.data.leaves || [];
       title = `Leave Report - ${emp.name || "Employee"} (${emp.employeeId || ""})`;
-      filename = `Leave_Report_${emp.employeeId || "Employee"}_${new Date().toISOString().split("T")[0]}.pdf`;
+      filename = `Leave_Report_${emp.employeeId || "Employee"}_${fromDate}_to_${toDate}.pdf`;
       head = [
         [
           "From Date",
@@ -221,8 +320,8 @@ const Reports = () => {
         l.reason || "",
       ]);
     } else if (reportResults.type === "date") {
-      title = `Date-Wise Leave Report (${reportFromDate || "Start"} to ${reportToDate || "End"})`;
-      filename = `Leave_Report_DateWise_${new Date().toISOString().split("T")[0]}.pdf`;
+      title = "Date-Wise Leave Report";
+      filename = `Leave_Report_DateWise_${fromDate}_to_${toDate}.pdf`;
       head = [
         [
           "Employee Name",
@@ -250,14 +349,19 @@ const Reports = () => {
     doc.setTextColor(30, 41, 59);
     doc.text(title, 14, 18);
 
+    // Date Range Header Highlight
+    doc.setFontSize(10);
+    doc.setTextColor(79, 70, 229);
+    doc.text(`Date Range: ${dateRangeStr}`, 14, 25);
+
     // Metadata
     doc.setFontSize(9);
     doc.setTextColor(100, 116, 139);
-    doc.text(`Generated Date: ${formattedDate}`, 14, 25);
+    doc.text(`Generated Date: ${formattedDate}`, 14, 31);
 
     // Table
     autoTable(doc, {
-      startY: 30,
+      startY: 36,
       head: head,
       body: body,
       theme: "striped",
@@ -330,22 +434,29 @@ const Reports = () => {
             )}
 
             <div className="form-group" style={{ marginBottom: 0 }}>
-              <label className="form-label">From Date (Optional)</label>
+              <label className="form-label">
+                From Date <span className="required-star">*</span>
+              </label>
               <input
                 type="date"
                 className="form-control"
                 value={reportFromDate}
                 onChange={(e) => setReportFromDate(e.target.value)}
+                required
               />
             </div>
 
             <div className="form-group" style={{ marginBottom: 0 }}>
-              <label className="form-label">To Date (Optional)</label>
+              <label className="form-label">
+                To Date <span className="required-star">*</span>
+              </label>
               <input
                 type="date"
                 className="form-control"
                 value={reportToDate}
                 onChange={(e) => setReportToDate(e.target.value)}
+                min={reportFromDate || undefined}
+                required
               />
             </div>
 

@@ -1,4 +1,5 @@
 import express from "express";
+import { Op } from "sequelize";
 import Leave from "../models/Leave.js";
 import {
   create,
@@ -12,19 +13,36 @@ import { authorize } from "../middleware/role_middleware.js";
 
 const router = express.Router();
 
+const getTodayStr = () => {
+  const d = new Date();
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
 router.post("/", protect, authorize(["admin", "user"]), (req, res) => {
   if (!req.body.employeeId && req.user) {
     req.body.employeeId = req.user.employeeId;
   }
+  if (!req.body.assignedTo && req.user) {
+    req.body.assignedTo = req.user.employeeId;
+  }
   if (!req.body.status) {
     req.body.status = "pending";
   }
+
+  const todayStr = getTodayStr();
+  if (req.body.fromDate && req.body.fromDate < todayStr) {
+    return res.status(400).json({ message: "From Date cannot be in the past" });
+  }
+
   create(req, res, Leave);
 });
 
 router.put("/:id", protect, authorize(["admin", "user"]), async (req, res) => {
   try {
-    const existingLeave = await Leave.findById(req.params.id);
+    const existingLeave = await Leave.findByPk(req.params.id);
     if (!existingLeave) {
       return res.status(404).json({ message: "Leave request not found" });
     }
@@ -36,9 +54,14 @@ router.put("/:id", protect, authorize(["admin", "user"]), async (req, res) => {
       });
     }
 
+    const todayStr = getTodayStr();
+    if (req.body.fromDate && req.body.fromDate < todayStr) {
+      return res.status(400).json({ message: "From Date cannot be in the past" });
+    }
+
     update(req, res, Leave);
   } catch (err) {
-    console.error(err);
+    console.error("Update leave error:", err);
     res.status(500).json({ message: "internal server error" });
   }
 });
@@ -48,7 +71,7 @@ router.get("/", protect, authorize(["admin", "user"]), (req, res) => {
     req.user.role === "admin"
       ? {}
       : {
-          $or: [
+          [Op.or]: [
             { employeeId: req.user.employeeId },
             { assignedTo: req.user.employeeId },
           ],
@@ -61,7 +84,7 @@ router.get("/:id", protect, authorize(["admin", "user"]), (req, res) => {
     req.user.role === "admin"
       ? {}
       : {
-          $or: [
+          [Op.or]: [
             { employeeId: req.user.employeeId },
             { assignedTo: req.user.employeeId },
           ],
@@ -71,7 +94,7 @@ router.get("/:id", protect, authorize(["admin", "user"]), (req, res) => {
 
 router.delete("/:id", protect, authorize(["admin", "user"]), async (req, res) => {
   try {
-    const existingLeave = await Leave.findById(req.params.id);
+    const existingLeave = await Leave.findByPk(req.params.id);
     if (!existingLeave) {
       return res.status(404).json({ message: "Leave request not found" });
     }
@@ -85,7 +108,7 @@ router.delete("/:id", protect, authorize(["admin", "user"]), async (req, res) =>
 
     remove(req, res, Leave);
   } catch (err) {
-    console.error(err);
+    console.error("Delete leave error:", err);
     res.status(500).json({ message: "internal server error" });
   }
 });

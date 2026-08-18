@@ -12,10 +12,11 @@ const DataTable = ({
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
 
-  // Reset page to 1 when search term or data changes
+  // Reset page to 1 when search term or data length changes
+  const dataLength = data ? data.length : 0;
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, data]);
+  }, [searchTerm, dataLength]);
 
   const filteredData = (data || []).filter((item) => {
     if (!searchTerm || !searchKey) return true;
